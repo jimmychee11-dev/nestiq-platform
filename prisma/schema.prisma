@@ -1,0 +1,286 @@
+// NestIQ — multi-tenant agentic operations platform
+// PostgreSQL + Prisma. All cross-tenant rows carry companyId; every FK is indexed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  OWNER
+  ADMIN
+  VIEWER
+}
+
+enum AgentRole {
+  CEO
+  ENGINEERING
+  MARKETING
+  SALES
+  OPERATIONS
+}
+
+enum AgentStatus {
+  IDLE
+  PLANNING
+  EXECUTING
+  PAUSED
+  ERROR
+  OFFLINE
+}
+
+enum TaskStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  AWAITING_HUMAN_REVIEW
+  CANCELLED
+}
+
+enum LogKind {
+  SYSTEM
+  MESSAGE
+  THOUGHT
+  TOOL_CALL
+  TOOL_RESULT
+  ERROR
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+enum McpTransport {
+  STDIO
+  SSE
+  STREAMABLE_HTTP
+}
+
+enum McpServerStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+// ---------------------------------------------------------------------------
+// Identity & tenancy
+// ---------------------------------------------------------------------------
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String?
+  createdAt   DateTime     @default(now())
+  memberships Membership[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  role      UserRole @default(VIEWER)
+  userId    String
+  companyId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  // URL identity: /dashboard/nestiq-22
+  slug      String   @unique
+  name      String
+  // Annual run rate in cents. BigInt so >$21M ARR doesn't overflow Int32.
+  arrCents  BigInt   @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Onboarding output: business idea, market, stage, and the generated
+  // lean canvas. Injected as context into every agent's system prompt.
+  businessProfile Json @default("{}")
+
+  // Token-spend guardrail: hard monthly ceiling enforced by the agent engine.
+  monthlyTokenBudget Int @default(5000000)
+  // Token-bucket rate limit: model calls per minute across all of this
+  // company's agents (refilled continuously, burstable to capacity).
+  modelCallsPerMinute Int @default(30)
+
+  memberships   Membership[]
+  agents        Agent[]
+  tasks         Task[]
+  executionLogs ExecutionLog[]
+  mcpServers    McpServer[]
+  usageEvents   UsageEvent[]
+}
+
+// ---------------------------------------------------------------------------
+// Agents
+// ---------------------------------------------------------------------------
+
+model Agent {
+  id           String      @id @default(cuid())
+  companyId    String
+  role         AgentRole
+  name         String
+  status       AgentStatus @default(IDLE)
+  model        String      @default("claude-opus-4-8")
+  systemPrompt String      @db.Text
+  // Arbitrary per-agent knobs (allowed MCP servers, effort level, persona).
+  config       Json        @default("{}")
+  lastActiveAt DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tasks         Task[]
+  executionLogs ExecutionLog[]
+  usageEvents   UsageEvent[]
+
+  @@unique([companyId, role])
+  @@index([companyId])
+  @@index([companyId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Tasks — the unit of work the orchestrator dispatches
+// ---------------------------------------------------------------------------
+
+model Task {
+  id        String     @id @default(cuid())
+  companyId String
+  agentId   String?
+  // Self-relation: the CEO's parent goal owns its decomposed child tasks.
+  parentId  String?
+  title     String
+  // Natural-language goal handed to the agent loop.
+  goal      String     @db.Text
+  status    TaskStatus @default(PENDING)
+  // Lower runs first within a goal decomposition.
+  priority  Int        @default(0)
+  attempts  Int        @default(0)
+  // JSONB: raw structured input (orchestrator context, human override notes).
+  input     Json       @default("{}")
+  // JSONB: final structured result reported by the agent.
+  result    Json?
+  error     String?    @db.Text
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent         Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  parent        Task?          @relation("TaskTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Task[]         @relation("TaskTree")
+  executionLogs ExecutionLog[]
+  usageEvents   UsageEvent[]
+
+  @@index([companyId])
+  @@index([agentId])
+  @@index([parentId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Execution logs — the raw trace streamed to the dashboard
+// ---------------------------------------------------------------------------
+
+model ExecutionLog {
+  id        String   @id @default(cuid())
+  // Monotonic per-table sequence; the SSE stream and console order by this.
+  seq       Int      @unique @default(autoincrement())
+  companyId String
+  taskId    String?
+  agentId   String?
+  kind      LogKind
+  level     LogLevel @default(INFO)
+  // Denormalized so the console can color-code without a join.
+  agentRole AgentRole?
+  content   String   @db.Text
+  toolName  String?
+  // JSONB: raw tool_use input exactly as the model emitted it.
+  toolInput Json?
+  // JSONB: raw tool result returned through the MCP gateway.
+  toolOutput Json?
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([taskId])
+  @@index([agentId])
+  @@index([companyId, seq])
+  @@index([companyId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// MCP server registry — per-company tool surface
+// ---------------------------------------------------------------------------
+
+model McpServer {
+  id        String          @id @default(cuid())
+  // Null companyId = platform-global server available to every tenant.
+  companyId String?
+  name      String
+  transport McpTransport
+  // STDIO transport
+  command   String?
+  args      String[]        @default([])
+  // SSE / Streamable HTTP transport
+  url       String?
+  // JSONB: env vars injected into the child process. Encrypt at rest in prod.
+  env       Json            @default("{}")
+  status    McpServerStatus @default(DISCONNECTED)
+  lastSeenAt DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Usage ledger — feeds the budget tracker and the dashboard throughput chart
+// ---------------------------------------------------------------------------
+
+model UsageEvent {
+  id           String   @id @default(cuid())
+  companyId    String
+  agentId      String?
+  taskId       String?
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent   Agent?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([agentId])
+  @@index([taskId])
+  @@index([companyId, createdAt])
+}

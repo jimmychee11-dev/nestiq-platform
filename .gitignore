@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+out/
+dist/
+build/
+
+# Environment — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+.logs/
+*.log
+*.err.log
+
+# Local dev services
+.redis/
+*.rdb
+
+# Prisma generated + pglite runtime
+prisma/generated/
+generated/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# PM2
+.pm2/
