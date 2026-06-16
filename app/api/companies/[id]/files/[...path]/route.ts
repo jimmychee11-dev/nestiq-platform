@@ -6,12 +6,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; path: string[] }> },
 ) {
-  const { id } = await params;
-  const filePath = req.nextUrl.searchParams.get("path");
-  if (!filePath) return NextResponse.json({ error: "Missing path" }, { status: 400 });
+  const { id, path: pathSegments } = await params;
+  const filePath = pathSegments.join("/");
 
   try {
     const company = await prisma.company.findFirst({
@@ -22,15 +21,14 @@ export async function GET(
 
     const file = await prisma.companyFile.findUnique({
       where: { companyId_path: { companyId: company.id, path: filePath } },
-      select: { content: true, sizeBytes: true, updatedAt: true, mimeType: true },
     });
     if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
-    return NextResponse.json({
-      content: file.content,
-      size: file.sizeBytes,
-      modifiedAt: file.updatedAt.toISOString(),
-      mimeType: file.mimeType,
+    return new NextResponse(file.content, {
+      headers: {
+        "Content-Type": file.mimeType || "text/plain",
+        "Content-Disposition": `inline; filename="${file.path.split("/").pop()}"`,
+      },
     });
   } catch (err) {
     return toErrorResponse(err);

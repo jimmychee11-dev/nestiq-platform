@@ -95,6 +95,37 @@ const REPORT_RESULT_TOOL: Anthropic.Tool = {
   },
 };
 
+const SAVE_DELIVERABLE_TOOL: Anthropic.Tool = {
+  name: "save_deliverable",
+  description:
+    "Save a file deliverable to the company's persistent deliverables store so it appears in the " +
+    "dashboard. Use this for EVERY document, report, plan, template, code file, or content piece " +
+    "you produce. Call it each time you finish creating a file — do not wait until report_result. " +
+    "You can call it multiple times to save multiple files.",
+  input_schema: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description:
+          "File path including extension (e.g. 'launch/landing-page.html', 'strategy/content-calendar.md'). " +
+          "Use folders to organise related files.",
+      },
+      content: {
+        type: "string",
+        description: "Full file content — markdown, HTML, JSON, code, etc.",
+      },
+      mime_type: {
+        type: "string",
+        description:
+          "MIME type of the file. Defaults to text/plain. Common values: text/markdown, text/html, " +
+          "application/json, text/css, application/javascript.",
+      },
+    },
+    required: ["path", "content"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Execution log persistence + live broadcast
 // ---------------------------------------------------------------------------
@@ -166,9 +197,12 @@ function buildSystemPrompt(agent: Agent, company: Company): string {
     "Self-healing operating rules — exhaust ALL creative options before escalating:",
     "- Work autonomously toward the task goal using your tools. Never ask questions in plain text.",
     "- If you cannot fulfill the EXACT goal literally (e.g., no web access to pull live data), produce the",
-    "  BEST POSSIBLE DELIVERABLE you CAN create with your tools: a template, a framework, a filled example,",
-    "  a detailed research guide, a script, a strategy doc, or a placeholder structure the human can fill.",
-    "  'I can't browse the web' is NOT a reason to escalate — create a template and save it instead.",
+    "  BEST POSSIBLE DELIVERABLE you CAN create: a fully written template, framework, strategy doc, code file,",
+    "  email sequence, content calendar, landing page HTML, or report. Write the COMPLETE file content — not",
+    "  a summary or an outline. Then call save_deliverable to persist it. 'I can't browse the web' is NOT a",
+    "  reason to escalate — write a production-quality deliverable from your knowledge and save it instead.",
+    "- For EVERY document, report, code file, email, or content piece you produce: call save_deliverable.",
+    "  Save each file individually as you finish it. The human sees these in the Deliverables tab.",
     "- If the human overrode a prior escalation with no instruction, try a DIFFERENT APPROACH from your",
     "  first attempt. Do not repeat the same strategy that failed. Be creative.",
     "- ONLY call escalate_to_human when ALL of these are true: (a) the goal cannot be approximated by any",
@@ -200,6 +234,7 @@ async function runAgentLoop(
   const tools: Anthropic.ToolUnion[] = [
     ...gateway.getAnthropicTools(allowedServers),
     ESCALATE_TOOL,
+    SAVE_DELIVERABLE_TOOL,
     REPORT_RESULT_TOOL,
   ];
 
@@ -311,6 +346,48 @@ async function runAgentLoop(
           summary: typeof input.summary === "string" ? input.summary : "Done.",
           artifacts,
         };
+      }
+
+      if (toolUse.name === SAVE_DELIVERABLE_TOOL.name) {
+        const filePath = typeof input.path === "string" ? input.path : "deliverable.txt";
+        const content  = typeof input.content === "string" ? input.content : "";
+        const mimeType = typeof input.mime_type === "string" ? input.mime_type : "text/plain";
+        try {
+          await prisma.companyFile.upsert({
+            where: { companyId_path: { companyId: company.id, path: filePath } },
+            create: {
+              companyId: company.id,
+              taskId: task.id,
+              agentRole: agent.role,
+              path: filePath,
+              content,
+              mimeType,
+              sizeBytes: Buffer.byteLength(content, "utf8"),
+            },
+            update: {
+              content,
+              mimeType,
+              sizeBytes: Buffer.byteLength(content, "utf8"),
+              taskId: task.id,
+              agentRole: agent.role,
+            },
+          });
+          await publishLog({
+            ...logBase,
+            kind: LogKind.TOOL_RESULT,
+            content: `📄 Saved deliverable: ${filePath} (${(Buffer.byteLength(content, "utf8") / 1024).toFixed(1)} KB)`,
+            toolName: toolUse.name,
+          });
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: `Saved ${filePath} (${Buffer.byteLength(content, "utf8")} bytes) to deliverables.`,
+          });
+        } catch (err) {
+          const msg = `Failed to save deliverable: ${err instanceof Error ? err.message : String(err)}`;
+          toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: msg, is_error: true });
+        }
+        continue;
       }
 
       await publishLog({

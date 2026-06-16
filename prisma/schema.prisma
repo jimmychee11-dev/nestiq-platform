@@ -126,6 +126,7 @@ model Company {
   executionLogs ExecutionLog[]
   mcpServers    McpServer[]
   usageEvents   UsageEvent[]
+  files         CompanyFile[]
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +260,32 @@ model McpServer {
 
   @@unique([companyId, name])
   @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Deliverables — files produced by agents, stored in the DB so they are
+// visible in the cloud dashboard regardless of where the worker runs.
+// ---------------------------------------------------------------------------
+
+model CompanyFile {
+  id          String   @id @default(cuid())
+  companyId   String
+  taskId      String?
+  agentRole   AgentRole?
+  // Path as reported by the agent (e.g. "landing-page/index.html")
+  path        String
+  mimeType    String   @default("text/plain")
+  // File content stored as text (UTF-8). Binary files are base64-encoded.
+  content     String   @db.Text
+  sizeBytes   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, path])
+  @@index([companyId])
+  @@index([companyId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

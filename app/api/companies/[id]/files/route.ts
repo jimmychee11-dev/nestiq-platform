@@ -1,40 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/src/lib/db";
 import { toErrorResponse } from "@/src/lib/apiError";
-import fs from "fs";
-import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-interface FileEntry {
-  name: string;
-  relativePath: string;
-  size: number;
-  modifiedAt: string;
-  ext: string;
-}
-
-function walk(dir: string, root: string, out: FileEntry[]) {
-  let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-  catch { return; }
-  for (const e of entries) {
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      walk(full, root, out);
-    } else if (e.isFile()) {
-      const stat = fs.statSync(full);
-      out.push({
-        name: e.name,
-        relativePath: path.relative(root, full).replace(/\\/g, "/"),
-        size: stat.size,
-        modifiedAt: stat.mtime.toISOString(),
-        ext: path.extname(e.name).toLowerCase().replace(".", ""),
-      });
-    }
-  }
-}
 
 export async function GET(
   _req: NextRequest,
@@ -45,19 +14,44 @@ export async function GET(
   try {
     const company = await prisma.company.findFirst({
       where: { OR: [{ id }, { slug: id }] },
-      select: { slug: true },
+      select: { id: true },
     });
     if (!company) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const fsRoot = process.env.MCP_FS_ROOT;
-    if (!fsRoot) return NextResponse.json({ files: [] });
+    const rows = await prisma.companyFile.findMany({
+      where: { companyId: company.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        path: true,
+        mimeType: true,
+        sizeBytes: true,
+        updatedAt: true,
+        agentRole: true,
+        taskId: true,
+      },
+    });
 
-    const files: FileEntry[] = [];
-    walk(fsRoot, fsRoot, files);
-    files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+    const files = rows.map((r) => ({
+      name: r.path.split("/").pop() ?? r.path,
+      relativePath: r.path,
+      size: r.sizeBytes,
+      modifiedAt: r.updatedAt.toISOString(),
+      ext: r.path.split(".").pop()?.toLowerCase() ?? "",
+      agentRole: r.agentRole,
+      taskId: r.taskId,
+      mimeType: r.mimeType,
+    }));
 
-    return NextResponse.json({ files, fsRoot });
+    return NextResponse.json({ files });
   } catch (err) {
     return toErrorResponse(err);
   }
+}
+
+export async function GET_CONTENT(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Separate endpoint; keep GET clean.
+  return NextResponse.json({ error: "Use /api/companies/[id]/files/[path]" }, { status: 400 });
 }
