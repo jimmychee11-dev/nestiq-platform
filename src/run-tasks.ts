@@ -34,7 +34,7 @@ async function processTask(
     include: { agent: true, company: true },
   });
   if (!task || !task.agent) { console.log(`[runner] Task ${taskId} not found or no agent`); return; }
-  if ([TaskStatus.SUCCESS, TaskStatus.CANCELLED, TaskStatus.AWAITING_HUMAN_REVIEW].includes(task.status)) {
+  if (task.status === TaskStatus.SUCCESS || task.status === TaskStatus.CANCELLED || task.status === TaskStatus.AWAITING_HUMAN_REVIEW) {
     console.log(`[runner] Task ${taskId} is already ${task.status} — skipping`);
     return;
   }

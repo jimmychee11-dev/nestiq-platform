@@ -48,10 +48,3 @@ export async function GET(
   }
 }
 
-export async function GET_CONTENT(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  // Separate endpoint; keep GET clean.
-  return NextResponse.json({ error: "Use /api/companies/[id]/files/[path]" }, { status: 400 });
-}
