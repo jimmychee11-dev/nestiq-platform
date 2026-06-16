@@ -11,6 +11,7 @@ import { McpClientManager } from "@/src/mcp/mcpGateway";
 import { BudgetTracker, TokenBucketRateLimiter } from "@/src/engine/budget";
 import { redis } from "@/src/lib/redis";
 import { runAgentLoopDirect, publishLog } from "@/src/engine/agentEngine";
+import { enqueueTask } from "@/src/lib/queue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
       content: `✔ Task complete (cron): ${outcome.summary}`,
     });
 
-    // Unblock next pending sibling.
+    // Unblock next pending sibling and immediately trigger it.
     if (task.parentId) {
       const next = await prisma.task.findFirst({
         where: {
@@ -119,6 +120,7 @@ export async function GET(req: NextRequest) {
       });
       if (next) {
         await prisma.task.update({ where: { id: next.id }, data: { status: TaskStatus.QUEUED } });
+        await enqueueTask(next.id); // chains the HTTP trigger for the next task
       }
     }
 
