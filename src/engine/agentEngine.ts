@@ -221,6 +221,16 @@ interface LoopOutcome {
   artifacts: string[];
 }
 
+export async function runAgentLoopDirect(
+  task: TaskWithRelations,
+  agent: Agent,
+  gateway: McpClientManager,
+  limiter: TokenBucketRateLimiter,
+  budget: BudgetTracker,
+): Promise<LoopOutcome> {
+  return runAgentLoop(task, agent, gateway, limiter, budget);
+}
+
 async function runAgentLoop(
   task: TaskWithRelations,
   agent: Agent,
