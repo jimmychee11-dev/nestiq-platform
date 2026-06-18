@@ -181,9 +181,9 @@ function DbDownScreen({ onRetry }: { onRetry: () => void }) {
         {isCloud ? (
           <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-left space-y-1">
             <p className="text-xs font-semibold text-amber-300">Possible causes:</p>
-            <p className="text-xs text-amber-400/80">• Neon free-tier monthly quota exceeded — upgrade at neon.tech</p>
+            <p className="text-xs text-amber-400/80">• Supabase project paused or unreachable — check supabase.com</p>
             <p className="text-xs text-amber-400/80">• DATABASE_URL env var missing or invalid in Vercel</p>
-            <p className="text-xs text-amber-400/80">• Neon compute is waking up — retry in a few seconds</p>
+            <p className="text-xs text-amber-400/80">• Supabase is starting up — retry in a few seconds</p>
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-left">

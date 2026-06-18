@@ -38,7 +38,7 @@ export default function ErrorPage({
       <p className="mt-2 max-w-sm text-sm text-zinc-500">
         {isDbError
           ? (typeof window !== "undefined" && !window.location.hostname.includes("localhost")
-              ? "The database isn't reachable. Check your Neon quota and DATABASE_URL in Vercel. Retrying every 5 seconds."
+              ? "The database isn't reachable. Check your Supabase project and DATABASE_URL in Vercel. Retrying every 5 seconds."
               : "Run start-all.ps1 to boot the stack. This page retries automatically every 5 seconds.")
           : error.message ?? "An unexpected error occurred."}
       </p>

@@ -13,7 +13,7 @@ export default function GlobalError({ reset }: { reset: () => void }) {
           </h1>
           <p style={{ fontSize: 14, marginBottom: 24, maxWidth: 320 }}>
             {typeof window !== "undefined" && !window.location.hostname.includes("localhost")
-              ? "The database isn't reachable. Check your Neon quota and DATABASE_URL in Vercel, then refresh."
+              ? "The database isn't reachable. Check your Supabase project and DATABASE_URL in Vercel, then refresh."
               : <>The database or server isn&apos;t reachable yet. Run{" "}
                   <code style={{ background: "#1c1c1e", padding: "2px 6px", borderRadius: 4, color: "#34d399" }}>
                     start-all.ps1

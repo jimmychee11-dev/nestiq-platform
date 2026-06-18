@@ -52,7 +52,7 @@ export async function GET(
       start(controller) {
         controller.enqueue(sseError(
           process.env.VERCEL
-            ? "Database unavailable — check Neon quota and DATABASE_URL in Vercel"
+            ? "Database unavailable — check Supabase project status and DATABASE_URL in Vercel"
             : "Database unavailable — run start-all.ps1"
         ));
         controller.close();
