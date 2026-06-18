@@ -164,6 +164,8 @@ function DbDownScreen({ onRetry }: { onRetry: () => void }) {
     return () => { cancelled = true; clearInterval(dotsT); };
   }, [onRetry]);
 
+  const isCloud = typeof window !== "undefined" && !window.location.hostname.includes("localhost");
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950 p-8 text-center">
       <div className="max-w-sm">
@@ -172,16 +174,25 @@ function DbDownScreen({ onRetry }: { onRetry: () => void }) {
             ? <Loader2 className="h-7 w-7 animate-spin text-amber-400" />
             : <Zap className="h-7 w-7 text-amber-400" />}
         </div>
-        <h2 className="text-xl font-semibold text-zinc-100">Stack is starting up</h2>
+        <h2 className="text-xl font-semibold text-zinc-100">Database unavailable</h2>
         <p className="mt-2 text-sm text-zinc-500 leading-relaxed">
-          The database isn&apos;t reachable yet. Auto-checking every 4 seconds{dots}
+          Auto-checking every 4 seconds{dots}
         </p>
-        <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-left">
-          <p className="text-xs font-semibold text-amber-300 mb-1">To start the stack:</p>
-          <code className="text-xs text-amber-400 font-mono">
-            powershell -ExecutionPolicy Bypass -File start-all.ps1
-          </code>
-        </div>
+        {isCloud ? (
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-left space-y-1">
+            <p className="text-xs font-semibold text-amber-300">Possible causes:</p>
+            <p className="text-xs text-amber-400/80">• Neon free-tier monthly quota exceeded — upgrade at neon.tech</p>
+            <p className="text-xs text-amber-400/80">• DATABASE_URL env var missing or invalid in Vercel</p>
+            <p className="text-xs text-amber-400/80">• Neon compute is waking up — retry in a few seconds</p>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-950/20 px-4 py-3 text-left">
+            <p className="text-xs font-semibold text-amber-300 mb-1">To start the stack:</p>
+            <code className="text-xs text-amber-400 font-mono">
+              powershell -ExecutionPolicy Bypass -File start-all.ps1
+            </code>
+          </div>
+        )}
         <button
           onClick={onRetry}
           className="mt-5 flex items-center gap-2 mx-auto rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-bold text-black transition hover:bg-emerald-400"

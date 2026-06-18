@@ -50,7 +50,11 @@ export async function GET(
   } catch {
     const errStream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(sseError("Database unavailable — run start-all.ps1"));
+        controller.enqueue(sseError(
+          process.env.VERCEL
+            ? "Database unavailable — check Neon quota and DATABASE_URL in Vercel"
+            : "Database unavailable — run start-all.ps1"
+        ));
         controller.close();
       },
     });

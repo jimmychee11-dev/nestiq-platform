@@ -145,7 +145,16 @@ export interface PublishLogParams {
   tokensOut?: number;
 }
 
+// Cap stored content to avoid burning DB network transfer quota.
+// The SSE feed uses the full content; only the DB row is truncated.
+const LOG_CONTENT_LIMIT = 2_000;
+
 export async function publishLog(params: PublishLogParams): Promise<void> {
+  const storedContent =
+    params.content && params.content.length > LOG_CONTENT_LIMIT
+      ? params.content.slice(0, LOG_CONTENT_LIMIT) + "…[truncated]"
+      : params.content;
+
   const row = await prisma.executionLog.create({
     data: {
       companyId: params.companyId,
@@ -154,7 +163,7 @@ export async function publishLog(params: PublishLogParams): Promise<void> {
       agentRole: params.agentRole ?? undefined,
       kind: params.kind,
       level: params.level ?? LogLevel.INFO,
-      content: params.content,
+      content: storedContent,
       toolName: params.toolName,
       toolInput: params.toolInput as object | undefined,
       toolOutput: params.toolOutput as object | undefined,
@@ -172,7 +181,7 @@ export async function publishLog(params: PublishLogParams): Promise<void> {
       kind: row.kind,
       level: row.level,
       agentRole: row.agentRole,
-      content: row.content,
+      content: params.content, // full content for live SSE feed
       toolName: row.toolName,
     }),
   );
